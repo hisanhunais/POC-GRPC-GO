@@ -32,16 +32,20 @@ type YamlConfig struct {
 
 func main() {
 
+	// Uncomment if using environment variable approach to get total clients
+	// obtain total clients as an environment variable
 	// totalClients, err := strconv.Atoi(os.Getenv("TOTAL_CLIENTS"))
 	// if err != nil {
 	// 	log.Print(err)
 	// 	log.Fatalf("Enter valid number for TOTAL_CLIENTS %v", err)
 	// }
 
+	// obtain total clients as a flag passed from command line
 	clientsPtr := flag.Int("clients", 0, "Total Number of Clients")
 	flag.Parse()
 	totalClients := *clientsPtr
 
+	// create specified number of clients
 	for i := 0; i < totalClients; i++ {
 		time.Sleep(6 * time.Second)
 		uuidWithHyphen := uuid.New()
@@ -71,40 +75,60 @@ func connectToServer(clientDetails *pb.ClientDetail) {
 	client := pb.NewNotificationClient(conn)
 
 	stream, err := client.ConnectToServer(context.Background(), clientDetails)
+	// background task to receive messages from the server
 	go receiveMessage(clientDetails, stream)
 }
 
 func receiveMessage(clientDetails *pb.ClientDetail, stream pb.Notification_ConnectToServerClient) {
+	content := bytes.Buffer{}
+	receivedSize := 0
+
 	for {
 		// listen for streams
 		message, err := stream.Recv()
-		log.Println("Receiving client ID: " + clientDetails.ID)
-		log.Println("Received " + strconv.Itoa(len(message.Content)) + " bytes")
 
-		// open a zip archive for reading.
-		reader := bytes.NewReader(message.Content)
-		zipReader, err := zip.NewReader(reader, int64(len(message.Content)))
+		if message.Status == pb.TransferStatusCode_Completed {
+			log.Println("Receive Complete")
+			log.Println("Total Received bytes: " + strconv.Itoa(receivedSize))
 
-		for _, f := range zipReader.File {
-			log.Println("Reading Contents of " + f.Name)
-
-			// reading the content of the file
-			contentReader, err := f.Open()
+			// open a zip archive for reading.
+			reader := bytes.NewReader(content.Bytes())
+			zipReader, err := zip.NewReader(reader, int64(receivedSize))
 			if err != nil {
 				log.Fatal(err)
 			}
-			buffer := new(bytes.Buffer)
-			buffer.ReadFrom(contentReader)
-			content := buffer.Bytes()
 
-			// extracting the title from the content
-			var yamlConfig YamlConfig
-			err = yaml.Unmarshal(content, &yamlConfig)
-			if err != nil {
-				fmt.Printf("Error parsing YAML file: %s\n", err)
+			for _, f := range zipReader.File {
+				log.Println("Reading Contents of " + f.Name)
+
+				// reading the content of the file
+				contentReader, err := f.Open()
+				if err != nil {
+					log.Fatal(err)
+				}
+				buffer := new(bytes.Buffer)
+				buffer.ReadFrom(contentReader)
+				data := buffer.Bytes()
+
+				// extracting the title from the content
+				var yamlConfig YamlConfig
+				err = yaml.Unmarshal(data, &yamlConfig)
+				if err != nil {
+					fmt.Printf("Error parsing YAML file: %s\n", err)
+				}
+				log.Println("Title: " + yamlConfig.Info.Title)
+				fmt.Println()
+				content = bytes.Buffer{}
+				receivedSize = 0
+				contentReader.Close()
 			}
-			log.Println("Title: " + yamlConfig.Info.Title)
-			contentReader.Close()
+		} else if message.Status == pb.TransferStatusCode_Pending {
+			if receivedSize == 0 {
+				log.Println("Receiving client ID: " + clientDetails.ID)
+			}
+			receivedSize += len(message.Content)
+			_, err = content.Write(message.Content)
+			log.Println("Received " + strconv.Itoa(len(message.Content)) + " bytes")
 		}
 
 		if err == io.EOF { //no more stream to listen
@@ -113,7 +137,5 @@ func receiveMessage(clientDetails *pb.ClientDetail, stream pb.Notification_Conne
 		if err != nil { // some error occured
 			log.Fatalf("%v", err)
 		}
-		log.Println("Receive Complete")
-		fmt.Println("")
 	}
 }

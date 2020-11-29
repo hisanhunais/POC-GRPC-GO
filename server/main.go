@@ -3,14 +3,14 @@ package main
 
 import (
 	"fmt"
-	pb "server-push/notification_proto"
+	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
-	"io"
-	"math/rand"
-	"time"
+	pb "server-push/notification_proto"
 	"strconv"
+	"time"
 
 	"google.golang.org/grpc"
 )
@@ -31,8 +31,15 @@ type Server struct {
 	pb.UnimplementedNotificationServer
 }
 
+// ClientIDList Struct to store the IDs of clients
 type ClientIDList struct {
-	clientID	string      
+	clientID string
+}
+
+// CompletedMessage Struct to indicate the transfer complete
+type CompletedMessage struct {
+	Message string
+	Status  string
 }
 
 func (server *Server) init() {
@@ -58,14 +65,14 @@ func (server *Server) addNewClient(in *pb.ClientDetail, stream *pb.Notification_
 	log.Printf("adding new client")
 	server.clientStreams[in.ID] = stream
 	server.clients[in.ID] = in
-	clientIDList = append(clientIDList, ClientIDList{clientID:in.ID})
+	clientIDList = append(clientIDList, ClientIDList{clientID: in.ID})
 	log.Printf("added client with ID: " + in.ID)
 	fmt.Println()
 }
 
 // send notification to specific client
 func (server *Server) sendNotification() {
-	
+
 	var (
 		writing = true
 		buf     []byte
@@ -75,28 +82,37 @@ func (server *Server) sendNotification() {
 
 	noOfClients := len(server.clientStreams)
 
-	file_path := "/home/hisan/Documents/Work/Tasks/POC-GRPC-Go/server-push/server/server-data/swagger.zip"
+	filePath := "/home/hisan/Documents/Work/Tasks/POC-GRPC-Go/server-push/server/server-data/swagger.zip"
 
 	randomClient := rand.Intn(noOfClients)
 	clientToSend := clientIDList[randomClient].clientID
-	log.Println("To Client: " + clientToSend)
+	log.Println("Sending data To Client: " + clientToSend)
 	stream := server.clientStreams[clientToSend]
 
-	file, err := os.Open(file_path)
+	file, err := os.Open(filePath)
 
 	if err != nil {
-		log.Fatalf("failed to open file: %s", file_path)
+		log.Fatalf("failed to open file: %s", filePath)
 		return
 	}
 	defer file.Close()
 
-	buf = make([]byte, 1 << 20)
-	var sentBytes = 0
+	buf = make([]byte, 500)
+	sentSize := 0
 	for writing {
 		n, err = file.Read(buf)
 		if err != nil {
 			if err == io.EOF {
-				log.Println("Sent " + strconv.Itoa(sentBytes) + " bytes")
+				err = (*stream).Send(&pb.Chunk{
+					Content: nil,
+					Status:  pb.TransferStatusCode_Completed,
+				})
+				log.Println("Send Complete")
+				log.Println("Total Sent bytes: " + strconv.Itoa(sentSize))
+				if err != nil {
+					log.Fatalf("failed to send chunk via stream")
+					return
+				}
 				writing = false
 				err = nil
 				continue
@@ -107,8 +123,10 @@ func (server *Server) sendNotification() {
 
 		err = (*stream).Send(&pb.Chunk{
 			Content: buf[:n],
+			Status:  pb.TransferStatusCode_Pending,
 		})
-		sentBytes = n
+		log.Println("Sent " + strconv.Itoa(n) + " bytes")
+		sentSize += n
 		if err != nil {
 			log.Fatalf("failed to send chunk via stream")
 			return
@@ -146,12 +164,11 @@ func backgroundTask(server *Server) {
 	for _ = range ticker.C {
 		log.Println("Timer Triggered")
 		noOfClients := len(server.clientStreams)
-		log.Println("No of Clients: " + strconv.Itoa(int(noOfClients)))
+		log.Println("Number of Clients: " + strconv.Itoa(int(noOfClients)))
 		if noOfClients > 0 {
-			log.Println("Sending Data")
 			server.sendNotification()
 		} else {
-			log.Println("No Clients")
+			log.Println("No Clients to send data")
 		}
 		fmt.Println()
 	}

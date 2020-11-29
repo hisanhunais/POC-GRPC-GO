@@ -22,23 +22,14 @@ message ClientDetail {
   string ID = 1;
 }
 
-// NotificationMessage is the message sent as notification from the server to the client
-message NotificationMessage{
-  string message = 1;
-  int64 time = 2; 
-}
-
 message Chunk {
         bytes Content = 1;
+        TransferStatusCode Status = 2;
 }
 
-enum UploadStatusCode {
+enum TransferStatusCode {
         Unknown = 0;
-        Ok = 1;
-        Failed = 2;
-}
-
-message UploadStatus {
-        string Message = 1;
-        UploadStatusCode Code = 2;
+        Completed = 1;
+        Pending = 2;
+        Failed = 3;
 }
