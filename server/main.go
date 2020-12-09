@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	address = "localhost:5001"
+	address = ":5002"
 )
 
 var ticker *time.Ticker
@@ -62,11 +62,11 @@ func (server *Server) ConnectToServer(in *pb.ClientDetail, stream pb.Notificatio
 
 // adds new client to map
 func (server *Server) addNewClient(in *pb.ClientDetail, stream *pb.Notification_ConnectToServerServer) {
-	log.Printf("adding new client")
+	log.Println("adding new client")
 	server.clientStreams[in.ID] = stream
 	server.clients[in.ID] = in
 	clientIDList = append(clientIDList, ClientIDList{clientID: in.ID})
-	log.Printf("added client with ID: " + in.ID)
+	log.Println("added client with ID: " + in.ID)
 	fmt.Println()
 }
 
@@ -82,7 +82,7 @@ func (server *Server) sendNotification() {
 
 	noOfClients := len(server.clientStreams)
 
-	filePath := "/home/hisan/Documents/Work/Tasks/POC-GRPC-Go/server-push/server/server-data/swagger.zip"
+	filePath := "/server/server-data/swagger.zip"
 
 	randomClient := rand.Intn(noOfClients)
 	clientToSend := clientIDList[randomClient].clientID
@@ -107,30 +107,34 @@ func (server *Server) sendNotification() {
 					Content: nil,
 					Status:  pb.TransferStatusCode_Completed,
 				})
-				log.Println("Send Complete")
-				log.Println("Total Sent bytes: " + strconv.Itoa(sentSize))
 				if err != nil {
-					log.Fatalf("failed to send chunk via stream")
-					return
+					log.Println("failed to send chunk via stream for client: "+clientToSend+" - %v", err)
+				} else {
+					log.Println("Send Complete")
+					log.Println("Total Sent bytes: " + strconv.Itoa(sentSize))
 				}
 				writing = false
 				err = nil
 				continue
 			}
-			log.Fatalf("errored while copying from file to buf")
-			return
+			log.Println("errored while copying from file to buf for client: "+clientToSend+" - %v", err)
+			writing = false
+			err = nil
+			continue
 		}
 
 		err = (*stream).Send(&pb.Chunk{
 			Content: buf[:n],
 			Status:  pb.TransferStatusCode_Pending,
 		})
+		if err != nil {
+			log.Println("failed to send chunk via stream for client: "+clientToSend+" - %v", err)
+			writing = false
+			err = nil
+			continue
+		}
 		log.Println("Sent " + strconv.Itoa(n) + " bytes")
 		sentSize += n
-		if err != nil {
-			log.Fatalf("failed to send chunk via stream")
-			return
-		}
 	}
 }
 
