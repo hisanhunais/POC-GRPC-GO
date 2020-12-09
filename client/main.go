@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
@@ -16,11 +17,13 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	"gopkg.in/yaml.v2"
 )
 
 const (
-	address = "localhost:5001"
+	address = "localhost:443"
 )
 
 // YamlConfig Config to extract Yaml Content
@@ -47,7 +50,7 @@ func main() {
 
 	// create specified number of clients
 	for i := 0; i < totalClients; i++ {
-		time.Sleep(6 * time.Second)
+		time.Sleep(1 * time.Second)
 		uuidWithHyphen := uuid.New()
 		uuid := strings.Replace(uuidWithHyphen.String(), "-", "", -1)
 
@@ -67,14 +70,20 @@ func main() {
 func connectToServer(clientDetails *pb.ClientDetail) {
 
 	// Set up a connection to the server.
-	conn, err := grpc.Dial(address, grpc.WithInsecure())
+	//conn, err := grpc.Dial(address, grpc.WithInsecure())
+	//ctx, cancel := context.WithTimeout(context.Background(), 100000*time.Millisecond)
+	//defer cancel()
+	h2creds := credentials.NewTLS(&tls.Config{NextProtos: []string{"h2"}, InsecureSkipVerify: true})
+	conn, err := grpc.Dial(address, grpc.WithTransportCredentials(h2creds), grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: 10 * time.Second, Timeout: 86400 * time.Second}))
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		log.Fatalf("did not dial: %v", err)
 	}
-
 	client := pb.NewNotificationClient(conn)
 
 	stream, err := client.ConnectToServer(context.Background(), clientDetails)
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
+	}
 	// background task to receive messages from the server
 	go receiveMessage(clientDetails, stream)
 }
@@ -86,6 +95,9 @@ func receiveMessage(clientDetails *pb.ClientDetail, stream pb.Notification_Conne
 	for {
 		// listen for streams
 		message, err := stream.Recv()
+		if err != nil {
+			log.Fatalf("Error in receiving message for client: "+clientDetails.ID+" - %v", err)
+		}
 
 		if message.Status == pb.TransferStatusCode_Completed {
 			log.Println("Receive Complete")
@@ -114,7 +126,7 @@ func receiveMessage(clientDetails *pb.ClientDetail, stream pb.Notification_Conne
 				var yamlConfig YamlConfig
 				err = yaml.Unmarshal(data, &yamlConfig)
 				if err != nil {
-					fmt.Printf("Error parsing YAML file: %s\n", err)
+					log.Printf("Error parsing YAML file: %v\n", err)
 				}
 				log.Println("Title: " + yamlConfig.Info.Title)
 				fmt.Println()
@@ -128,6 +140,9 @@ func receiveMessage(clientDetails *pb.ClientDetail, stream pb.Notification_Conne
 			}
 			receivedSize += len(message.Content)
 			_, err = content.Write(message.Content)
+			if err != nil {
+				log.Printf("Error in writing content: %v\n", err)
+			}
 			log.Println("Received " + strconv.Itoa(len(message.Content)) + " bytes")
 		}
 
