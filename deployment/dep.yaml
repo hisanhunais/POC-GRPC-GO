@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: adapter-dep
+  name: adapter-dep
+  namespace: poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: adapter-dep
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: adapter-dep
+    spec:
+      containers:
+      - image: hisanhunais/go-grpc-server:v8
+        name: go-grpc-server
+        resources: 
+          requests: 
+            cpu: 1.5
+            memory: "1Gi"
+          limits:
+            cpu: 2
+            memory: "2Gi"  
+status: {}

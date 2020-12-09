@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: GRPC
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: '86400'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '86400'
+    nginx.ingress.kubernetes.io/proxy-write-timeout: '86400'
+    nginx.ingress.kubernetes.io/server-snippet: |
+        grpc_read_timeout "86400s";
+    nginx.ingress.kubernetes.io/proxy-next-upstream: "error timeout http_502 http_503 http_504"
+  name: adapter-ingress
+  namespace: poc
+spec:
+  rules:
+  - http:
+      paths:
+      - backend:
+          serviceName: adapter-svc
+          servicePort: 5002   
+  tls:
+  - hosts:
+    - localhost
+         
